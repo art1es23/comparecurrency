@@ -34,7 +34,7 @@
             <div class="mt-1 relative rounded-md shadow-md">
               <input
                 @keydown.enter="addAndUpdate"
-                v-model="ticker"
+                v-model.trim="ticker"
                 type="text"
                 name="wallet"
                 id="wallet"
@@ -57,6 +57,9 @@
             </div>
             <div v-if="isExist" class="text-sm text-red-600">
               Такой тикер уже добавлен
+            </div>
+            <div v-if="isEmpty" class="text-sm text-red-600">
+              Введите свою валюту
             </div>
           </div>
         </div>
@@ -83,16 +86,40 @@
       </section>
 
       <template v-if="arrayTickers.length">
+        <div class="flex items-center gap-2">
+          <label for="filter">Filter:</label>
+          <input
+            type="text"
+            name="filter"
+            v-model.trim="filterTickers"
+            id="filter"
+            class="block pr-10 border-gray-300 text-gray-900 focus:outline-none focus:ring-gray-500 focus:border-gray-500 sm:text-sm rounded-md"
+          />
+          <button
+            @click="page--"
+            v-if="page > 1"
+            class="my-2 inline-flex items-center py-2 px-4 border border-transparent shadow-sm text-sm leading-4 font-medium rounded-full text-white bg-gray-600 hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+          >
+            Back
+          </button>
+          <button
+            @click="page++"
+            v-if="hasNextPage"
+            class="my-2 inline-flex items-center py-2 px-4 border border-transparent shadow-sm text-sm leading-4 font-medium rounded-full text-white bg-gray-600 hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+          >
+            Next
+          </button>
+        </div>
         <hr class="w-full border-t border-gray-600 my-4" />
         <dl class="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-3">
           <div
-            v-for="t in arrayTickers"
+            v-for="t in paginatedTickers"
             :key="t.name"
             @click="chooseCurrency(t)"
             :class="{
-              'border-purple-800': currentCurrency === t,
-              'border-solid': currentCurrency === t,
-              'border-4': currentCurrency === t,
+              'border-purple-800': selectedTicker === t,
+              'border-solid': selectedTicker === t,
+              'border-4': selectedTicker === t,
             }"
             class="bg-white overflow-hidden shadow rounded-lg cursor-pointer"
           >
@@ -117,13 +144,13 @@
         <hr class="w-full border-t border-gray-600 my-4" />
       </template>
 
-      <section v-if="currentCurrency" class="relative">
+      <section v-if="selectedTicker" class="relative">
         <h3 class="text-lg leading-6 font-medium text-gray-900 my-8">
-          {{ currentCurrency.name.toUpperCase() }} - USD
+          {{ selectedTicker.name.toUpperCase() }} - USD
         </h3>
         <div class="flex items-end border-gray-600 border-b border-l h-64">
           <div
-            v-for="(col, idx) in fixGraph()"
+            v-for="(col, idx) in fixedGraph"
             :key="idx"
             :style="{ height: `${col}%` }"
             class="bg-purple-800 border w-10"
@@ -159,61 +186,6 @@
       </section>
     </div>
   </div>
-  <!-- <div class="wrapper">
-    <section class="ticker">
-      <label for="ticker">Ticker</label>
-      <input
-        @keydown.enter="addAndUpdate"
-        v-model="ticker"
-        placeholder="Please input the currency.."
-        type="text"
-        id="ticker"
-        class="ticker-input"
-      />
-
-      <button @click="addAndUpdate" class="ticker-btn">
-        <span class="ticker-plus"></span>
-        <span>Add new*</span>
-      </button>
-    </section>
-
-    <dl v-show="arrayTickers.length" class="list-tickers">
-      <div
-        v-for="t in arrayTickers"
-        :key="t.name"
-        @click="chooseCurrency(t)"
-        :class="{
-          'ticker-card--active': currentCurrency === t,
-        }"
-        class="list-tickers__item ticker-card"
-      >
-        <dt class="ticker-card__caption">{{ t.name }} - USD</dt>
-        <dd class="ticker-card__value">{{ t.value }}</dd>
-        <button
-          @click.stop="handlerRemove(t)"
-          class="ticker-card-btn ticker-card-btn--remove"
-        >
-          <span class="icon-trash"></span>
-          <span>Remove</span>
-        </button>
-      </div>
-    </dl>
-
-    <section v-if="currentCurrency" class="diagram">
-      <h3 class="diagram-caption">{{ currentCurrency.name }} - USD</h3>
-      <div class="diagram-content">
-        <div
-          v-for="(col, idx) in fixGraph()"
-          :key="idx"
-          :style="{ height: `${col}%` }"
-          class="diagram-content__item"
-        ></div>
-      </div>
-      <button class="diagram-btn diagram-btn--close" @click="closeGraph">
-        X
-      </button>
-    </section>
-  </div> -->
 </template>
 
 <script>
@@ -221,18 +193,54 @@ export default {
   name: "App",
   data() {
     return {
+      ticker: "",
+      filterTickers: "",
+      isEmpty: false,
+
+      arrayTickers: [],
+      selectedTicker: null,
+
+      arrGraph: [],
+
+      page: 1,
+
       coinsList: null,
       isExist: false,
-      ticker: "",
-      arrayTickers: [],
-      currentCurrency: null,
-      arrGraph: [],
     };
   },
 
   watch: {
     ticker(value) {
       this.isExist = this.ticker !== value;
+      this.isEmpty = false;
+    },
+
+    arrayTickers() {
+      localStorage.setItem("crypto-list", JSON.stringify(this.arrayTickers));
+    },
+
+    filterTickers() {
+      this.page = 1;
+    },
+
+    pageStateOptions(value) {
+      const { pathname } = window.location;
+
+      window.history.pushState(
+        null,
+        document.title,
+        `${pathname}?filter=${value.filterTickers}&page=${value.page}`
+      );
+    },
+
+    paginatedTickers() {
+      if (this.paginatedTickers.length === 0 && this.page > 1) {
+        this.page--;
+      }
+    },
+
+    selectedTicker() {
+      this.arrGraph = [];
     },
   },
 
@@ -250,13 +258,46 @@ export default {
       },
     },
 
-    // filterCurrencies() {
-    //   return this.coinsList && this.ticker.length
-    //     ? Object.keys(this.coinsList)
-    //         .filter((name) => name.indexOf(this.ticker.toUpperCase()) > -1)
-    //         .slice(0, 4)
-    //     : [];
-    // },
+    startIndex() {
+      return (this.page - 1) * 6;
+    },
+    endIndex() {
+      return this.page * 6;
+    },
+
+    filteredListTickers() {
+      return this.arrayTickers.filter((ticker) =>
+        ticker.name.includes(this.filterTickers.toUpperCase())
+      );
+    },
+
+    paginatedTickers() {
+      return this.filteredListTickers.slice(this.startIndex, this.endIndex);
+    },
+
+    hasNextPage() {
+      return this.filteredListTickers.length > this.endIndex;
+    },
+
+    fixedGraph() {
+      const maxValue = Math.max(...this.arrGraph);
+      const minValue = Math.min(...this.arrGraph);
+
+      if (maxValue === minValue) {
+        return this.arrGraph.map(() => 50);
+      }
+
+      return this.arrGraph.map(
+        (value) => 5 + ((value - minValue) * 95) / (maxValue - minValue)
+      );
+    },
+
+    pageStateOptions() {
+      return {
+        filter: this.filterTickers,
+        page: this.page,
+      };
+    },
   },
 
   methods: {
@@ -277,13 +318,11 @@ export default {
         //   data.USD > 1 ? data.USD.toFixed(2) : data.USD.toPrecision(3);
 
         if (this.arrayTickers.length) {
-          this.arrayTickers.find(
-            (t) => t.name.toUpperCase() === tickerName
-          ).value =
+          this.arrayTickers.find((t) => t.name === tickerName).value =
             data.USD > 1 ? data.USD.toFixed(2) : data.USD.toPrecision(3);
         }
 
-        if (this.currentCurrency?.name === tickerName) {
+        if (this.selectedTicker?.name === tickerName) {
           this.arrGraph.push(data.USD);
         }
       }, 5000);
@@ -295,18 +334,19 @@ export default {
         value: "-",
       };
 
+      this.isEmpty = currentTicker.name === "";
+
       this.isExist = this.arrayTickers.some(
         (currency) => currency.name === currentTicker.name
       );
 
-      if (!this.isExist) {
-        this.arrayTickers.push(currentTicker);
-
-        localStorage.setItem("crypto-list", JSON.stringify(this.arrayTickers));
+      if (!this.isExist && !this.isEmpty) {
+        this.arrayTickers = [...this.arrayTickers, currentTicker];
 
         this.subscribeOnUpdates(currentTicker.name);
 
         this.ticker = "";
+        this.filterTickers = "";
         this.filterCurrencies = [];
       }
     },
@@ -314,27 +354,17 @@ export default {
     handlerRemove(current) {
       this.arrayTickers = this.arrayTickers.filter((t) => t !== current);
 
-      this.currentCurrency = null;
-      this.arrGraph = [];
-    },
-
-    fixGraph() {
-      const maxValue = Math.max(...this.arrGraph);
-      const minValue = Math.min(...this.arrGraph);
-
-      return this.arrGraph.map(
-        (value) => 5 + ((value - minValue) * 95) / (maxValue - minValue)
-      );
+      if (this.selectedTicker === current) {
+        this.selectedTicker = null;
+      }
     },
 
     chooseCurrency(current) {
-      this.currentCurrency = current;
-      this.arrGraph = [];
+      this.selectedTicker = current;
     },
 
     closeGraph() {
-      this.currentCurrency = null;
-      this.arrGraph = [];
+      this.selectedTicker = null;
     },
 
     async GET_COINS(url) {
@@ -353,8 +383,12 @@ export default {
   },
 
   async created() {
+    const windowData = Object.fromEntries(
+      new URL(window.location).searchParams.entries()
+    );
     const API_URL =
       "https://min-api.cryptocompare.com/data/all/coinlist?summary=true";
+    const tickersList = localStorage.getItem("crypto-list");
 
     try {
       const res = await this.GET_COINS(API_URL);
@@ -363,7 +397,13 @@ export default {
       console.log(error);
     }
 
-    const tickersList = localStorage.getItem("crypto-list");
+    const URL_KEYS = ["filter", "page"];
+
+    URL_KEYS.forEach((key) => {
+      if (windowData[key]) {
+        this[key] = windowData[key];
+      }
+    });
 
     if (tickersList) {
       this.arrayTickers = JSON.parse(tickersList);
