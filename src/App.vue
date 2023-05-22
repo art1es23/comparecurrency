@@ -42,31 +42,22 @@
                 placeholder="Например DOGE"
               />
             </div>
-            <!-- <div
+            <div
+              v-if="filterCurrencies.length"
               class="flex bg-white shadow-md p-1 rounded-md shadow-md flex-wrap"
             >
               <span
+                v-for="cur in filterCurrencies"
+                :key="cur"
+                @click="selectTicker(cur)"
                 class="inline-flex items-center px-2 m-1 rounded-md text-xs font-medium bg-gray-300 text-gray-800 cursor-pointer"
               >
-                BTC
+                {{ cur }}
               </span>
-              <span
-                class="inline-flex items-center px-2 m-1 rounded-md text-xs font-medium bg-gray-300 text-gray-800 cursor-pointer"
-              >
-                DOGE
-              </span>
-              <span
-                class="inline-flex items-center px-2 m-1 rounded-md text-xs font-medium bg-gray-300 text-gray-800 cursor-pointer"
-              >
-                BCH
-              </span>
-              <span
-                class="inline-flex items-center px-2 m-1 rounded-md text-xs font-medium bg-gray-300 text-gray-800 cursor-pointer"
-              >
-                CHD
-              </span>
-            </div> -->
-            <!-- <div class="text-sm text-red-600">Такой тикер уже добавлен</div> -->
+            </div>
+            <div v-if="isExist" class="text-sm text-red-600">
+              Такой тикер уже добавлен
+            </div>
           </div>
         </div>
         <button
@@ -230,6 +221,8 @@ export default {
   name: "App",
   data() {
     return {
+      coinsList: null,
+      isExist: false,
       ticker: "",
       arrayTickers: [],
       currentCurrency: null,
@@ -237,18 +230,45 @@ export default {
     };
   },
 
+  watch: {
+    ticker(value) {
+      this.isExist = this.ticker !== value;
+    },
+  },
+
+  computed: {
+    filterCurrencies: {
+      get() {
+        return this.coinsList && this.ticker.length
+          ? Object.keys(this.coinsList)
+              .filter((name) => name.indexOf(this.ticker.toUpperCase()) > -1)
+              .slice(0, 4)
+          : [];
+      },
+      set(value) {
+        return value;
+      },
+    },
+
+    // filterCurrencies() {
+    //   return this.coinsList && this.ticker.length
+    //     ? Object.keys(this.coinsList)
+    //         .filter((name) => name.indexOf(this.ticker.toUpperCase()) > -1)
+    //         .slice(0, 4)
+    //     : [];
+    // },
+  },
+
   methods: {
-    addAndUpdate() {
-      const currentTicker = {
-        name: this.ticker,
-        value: "-",
-      };
+    selectTicker(selectedCurrency) {
+      this.ticker = selectedCurrency;
+      this.addAndUpdate();
+    },
 
-      this.arrayTickers.push(currentTicker);
-
+    subscribeOnUpdates(tickerName) {
       setInterval(async () => {
         const result = await fetch(
-          `https://min-api.cryptocompare.com/data/price?fsym=${currentTicker.name}&tsyms=USD&api_key=b74a6f2284f2ca3d69eeae5385f268de0af9b99c0da269612147bd1feb9e7556`
+          `https://min-api.cryptocompare.com/data/price?fsym=${tickerName}&tsyms=USD&api_key=b74a6f2284f2ca3d69eeae5385f268de0af9b99c0da269612147bd1feb9e7556`
         );
 
         const data = await result.json();
@@ -257,16 +277,38 @@ export default {
         //   data.USD > 1 ? data.USD.toFixed(2) : data.USD.toPrecision(3);
 
         if (this.arrayTickers.length) {
-          this.arrayTickers.find((t) => t.name === currentTicker.name).value =
+          this.arrayTickers.find(
+            (t) => t.name.toUpperCase() === tickerName
+          ).value =
             data.USD > 1 ? data.USD.toFixed(2) : data.USD.toPrecision(3);
         }
 
-        if (this.currentCurrency?.name === currentTicker.name) {
+        if (this.currentCurrency?.name === tickerName) {
           this.arrGraph.push(data.USD);
         }
       }, 5000);
+    },
 
-      this.ticker = "";
+    addAndUpdate() {
+      const currentTicker = {
+        name: this.ticker.toUpperCase(),
+        value: "-",
+      };
+
+      this.isExist = this.arrayTickers.some(
+        (currency) => currency.name === currentTicker.name
+      );
+
+      if (!this.isExist) {
+        this.arrayTickers.push(currentTicker);
+
+        localStorage.setItem("crypto-list", JSON.stringify(this.arrayTickers));
+
+        this.subscribeOnUpdates(currentTicker.name);
+
+        this.ticker = "";
+        this.filterCurrencies = [];
+      }
     },
 
     handlerRemove(current) {
@@ -294,6 +336,41 @@ export default {
       this.currentCurrency = null;
       this.arrGraph = [];
     },
+
+    async GET_COINS(url) {
+      try {
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error(`An error occurred: ${response.status}`);
+        }
+        const data = await response.json();
+        return data;
+      } catch (error) {
+        console.log(`Error catch: ${error}`);
+        throw error;
+      }
+    },
+  },
+
+  async created() {
+    const API_URL =
+      "https://min-api.cryptocompare.com/data/all/coinlist?summary=true";
+
+    try {
+      const res = await this.GET_COINS(API_URL);
+      this.coinsList = res.Data;
+    } catch (error) {
+      console.log(error);
+    }
+
+    const tickersList = localStorage.getItem("crypto-list");
+
+    if (tickersList) {
+      this.arrayTickers = JSON.parse(tickersList);
+      this.arrayTickers.forEach((ticker) =>
+        this.subscribeOnUpdates(ticker.name)
+      );
+    }
   },
 };
 </script>
