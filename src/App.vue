@@ -128,7 +128,7 @@
                 {{ t.name }} - USD
               </dt>
               <dd class="mt-1 text-3xl font-semibold text-gray-900">
-                {{ t.value }}
+                {{ formatPrice(t.price) }}
               </dd>
             </div>
             <div class="w-full border-t border-gray-200"></div>
@@ -189,6 +189,8 @@
 </template>
 
 <script>
+import { subscribeOnTicker, unsubscribeFromTicker } from "./api";
+
 export default {
   name: "App",
   data() {
@@ -306,32 +308,27 @@ export default {
       this.addAndUpdate();
     },
 
-    subscribeOnUpdates(tickerName) {
-      setInterval(async () => {
-        const result = await fetch(
-          `https://min-api.cryptocompare.com/data/price?fsym=${tickerName}&tsyms=USD&api_key=b74a6f2284f2ca3d69eeae5385f268de0af9b99c0da269612147bd1feb9e7556`
-        );
+    formatPrice(price) {
+      if (price === "-") return price;
+      return price > 1 ? price.toFixed(2) : price.toPrecision(3);
+    },
 
-        const data = await result.json();
+    updateTicker(tickerName, price) {
+      this.arrayTickers
+        .filter((t) => t.name === tickerName)
+        .forEach((t) => {
+          t.price = price;
+        });
 
-        // currentTicker.value =
-        //   data.USD > 1 ? data.USD.toFixed(2) : data.USD.toPrecision(3);
-
-        if (this.arrayTickers.length) {
-          this.arrayTickers.find((t) => t.name === tickerName).value =
-            data.USD > 1 ? data.USD.toFixed(2) : data.USD.toPrecision(3);
-        }
-
-        if (this.selectedTicker?.name === tickerName) {
-          this.arrGraph.push(data.USD);
-        }
-      }, 5000);
+      // if (this.selectedTicker?.name === tickerName) {
+      //   this.arrGraph.push(exchangeData.USD);
+      // }
     },
 
     addAndUpdate() {
       const currentTicker = {
         name: this.ticker.toUpperCase(),
-        value: "-",
+        price: "-",
       };
 
       this.isEmpty = currentTicker.name === "";
@@ -343,7 +340,9 @@ export default {
       if (!this.isExist && !this.isEmpty) {
         this.arrayTickers = [...this.arrayTickers, currentTicker];
 
-        this.subscribeOnUpdates(currentTicker.name);
+        subscribeOnTicker(currentTicker.name, (newPrice) =>
+          this.updateTicker(currentTicker.name, newPrice)
+        );
 
         this.ticker = "";
         this.filterTickers = "";
@@ -351,12 +350,14 @@ export default {
       }
     },
 
-    handlerRemove(current) {
-      this.arrayTickers = this.arrayTickers.filter((t) => t !== current);
+    handlerRemove(tickerToRemove) {
+      this.arrayTickers = this.arrayTickers.filter((t) => t !== tickerToRemove);
 
-      if (this.selectedTicker === current) {
+      if (this.selectedTicker === tickerToRemove) {
         this.selectedTicker = null;
       }
+
+      unsubscribeFromTicker(tickerToRemove.name);
     },
 
     chooseCurrency(current) {
@@ -405,12 +406,17 @@ export default {
       }
     });
 
+    //////
     if (tickersList) {
       this.arrayTickers = JSON.parse(tickersList);
       this.arrayTickers.forEach((ticker) =>
-        this.subscribeOnUpdates(ticker.name)
+        subscribeOnTicker(ticker.name, (newPrice) =>
+          this.updateTicker(ticker.name, newPrice)
+        )
       );
     }
+
+    setInterval(this.updateTicker, 5000);
   },
 };
 </script>
